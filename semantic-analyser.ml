@@ -124,15 +124,23 @@ let rec annotate_lexical_rec e = match e with
   ;;
 
 let rec annotate_tail_rec in_tp e = match e with
-  | If'(test, dit, dif) -> If'(annotate_tail_rec false test, annotate_tail_rec false dit, annotate_tail_rec false dif)
-  | Seq'(expr_list) -> Seq'(List.map (annotate_tail_rec false) expr_list)
+  | If'(test, dit, dif) -> If'(annotate_tail_rec false test, annotate_tail_rec in_tp dit, annotate_tail_rec in_tp dif)
+  | Seq'(expr_list) -> annotate_seq in_tp expr_list
   | Set'(expr_var, expr_val) -> Set'(annotate_tail_rec false expr_var,annotate_tail_rec false expr_val)
   | Def'(expr_var, expr_val) -> Def'(annotate_tail_rec false expr_var,annotate_tail_rec false expr_val)
-  | Or'(expr_list) -> Or'(List.map (annotate_tail_rec false) expr_list)
+  | Or'(expr_list) -> annotate_or in_tp expr_list
   | Applic'(expr, expr_list) -> if in_tp then ApplicTP'(annotate_tail_rec false expr,List.map (annotate_tail_rec false) expr_list) else Applic'(annotate_tail_rec false expr,List.map (annotate_tail_rec false) expr_list)
   | LambdaSimple'(arg_list, body) -> LambdaSimple'(arg_list, annotate_tail_rec true body)
   | LambdaOpt'(arg_list, opt_arg, body) -> LambdaOpt'(arg_list, opt_arg, annotate_tail_rec true body)
   | other -> other
+
+and annotate_seq in_tp expr_list = (match (List.rev expr_list) with 
+    | car :: cdr -> Seq'((List.map (annotate_tail_rec false) (List.rev cdr)) @ [(annotate_tail_rec in_tp car)])
+    | _ -> Seq'((List.map (annotate_tail_rec false) expr_list)))
+
+and annotate_or in_tp expr_list = (match (List.rev expr_list) with 
+    | car :: cdr -> Or'((List.map (annotate_tail_rec false) (List.rev cdr)) @ [(annotate_tail_rec in_tp car)])
+    | _ -> Or'((List.map (annotate_tail_rec false) expr_list)))
 
 let annotate_lexical_addresses e = annotate_lexical_rec e;;
 
