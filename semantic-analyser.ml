@@ -52,24 +52,53 @@ let rec expr'_eq e1 e2 =
                        
 exception X_syntax_error;;
 
-module type SEMANTICS = sig
+(* module type SEMANTICS =  *)
+(* sig
   val run_semantics : expr -> expr'
   val annotate_lexical_addresses : expr -> expr'
   val annotate_tail_calls : expr' -> expr'
   val box_set : expr' -> expr'
-end;;
+end;; *)
 
-module Semantics : SEMANTICS = struct
+module Semantics 
+(* : SEMANTICS  *)
+= struct
 
-let annotate_lexical_addresses e = raise X_not_yet_implemented;;
+let rec annotate_vars exp annotate_fun = match exp with
+  | Var(string) -> annotate_fun string
+  | If(test, dit, dif) -> If(annotate_vars test annotate_fun, annotate_vars dit annotate_fun, annotate_vars dif annotate_fun)
+  | Seq(expr_list) -> Seq(List.map annotate_vars expr_list )
+  | Set(expr_var, expr_val) -> Set(annotate_vars expr_var,annotate_vars expr_val)
+  | Def(expr_var, expr_val) -> Def(annotate_vars expr_var,annotate_vars expr_val)
+  | Or(expr_list) -> Or(List.map annotate_vars expr_list)
+  | Applic(expr, expr_list) -> Applic(annotate_vars expr,List.map annotate_vars expr_list)
+  | LambdaSimple(string_list, expr) -> LambdaSimple(string_list, expr)
+  | LambdaOpt(string_list, string, expr) -> LambdaOpt(string_list, string, expr);;
+
+let find_parameters args_list body = 
+  let create_param_or_free level args_list string_var = 
+        match args_list with
+        | [] -> VarFree(string_var)
+        | car :: cdr -> if string_var = car then VarParam(string_var, level) else create_param_or_free (level + 1) cdr string_var 
+        in 
+    let annotate_fun = create_param_or_free 0 args_list in
+    annotate_vars body annotate_fun;;
+      
+
+let annotate_lexical_addresses e = match e with
+| LambdaSimple(arg_list,body) -> (
+    (*find all parameters in body*)
+    let after_params = find_parameters arg_list body in after_params
+    (*if lambda is encountered in body -> call a recursive function (with major level as arg) that finds all bound *)
+)
 
 let annotate_tail_calls e = raise X_not_yet_implemented;;
 
 let box_set e = raise X_not_yet_implemented;;
 
-let run_semantics expr =
+(* let run_semantics expr =
   box_set
     (annotate_tail_calls
-       (annotate_lexical_addresses expr));;
+       (annotate_lexical_addresses expr));; *)
   
 end;; (* struct Semantics *)
