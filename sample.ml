@@ -4,14 +4,18 @@ open Tag_Parser;;
 open Semantics;;
 
 (* tag_parse_expression(
-Pair(Symbol "lambda", Pair(Pair(Symbol "a", Nil), Pair(Symbol "a", Pair(Pair(Symbol "lambda", Pair(Pair(Symbol "b", Nil), Pair(Symbol "a", Pair(Symbol "b", Pair(Pair(Symbol "lambda", Pair(Pair(Symbol "c", Nil), Pair(Symbol "a", Nil))), Nil))))), Nil)))) 
+Pair(Symbol "lambda", Pair(Pair(Symbol "a", Nil), Pair(Pair(Symbol "a", Pair(Pair(Symbol "a", Pair(Pair(Symbol "lambda", Pair(Pair(Symbol "b", Nil), Pair(Pair(Symbol "b", Pair(Pair(Symbol "b", Pair(Pair(Symbol "a", Pair(Symbol "c", Nil)), Nil)), Nil)), Nil))), Nil)), Nil)), Nil))) 
 );; *)
 
-annotate_lexical_addresses(
+annotate_tail_calls 
+(annotate_lexical_addresses
+(
 LambdaSimple (["a"],
- Seq
-  [Var "a";
-   LambdaSimple (["b"], Seq [Var "a"; Var "b"; LambdaSimple (["c"], Var "a")])])
+ Applic (Var "a",
+  [Applic (Var "a",
+    [LambdaSimple (["b"],
+      Applic (Var "b", [Applic (Var "b", [Applic (Var "a", [Var "c"])])]))])]))
+)
 );;
 
 (*

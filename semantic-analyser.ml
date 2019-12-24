@@ -108,7 +108,7 @@ let rec annotate_lexical_rec e = match e with
   | LambdaSimple(arg_list, body) -> let annotated_body = (annotate_lambda_simple [arg_list] body) in LambdaSimple'(arg_list,annotated_body)
   | LambdaOpt(arg_list, opt_arg, body) -> let annotated_body = annotate_lambda_simple [arg_list@[opt_arg]] body in 
   LambdaOpt'(arg_list, opt_arg, annotated_body)
-  
+
   and annotate_lambda_simple arg_lists body = match body with
   | Const(constant) -> Const'(constant)
   | Var(str) -> annotate_bound_major str [arg_lists] (-1)
@@ -121,14 +121,22 @@ let rec annotate_lexical_rec e = match e with
   | LambdaSimple(arg_list, inner_body) -> let annotated_body = annotate_lambda_simple ([arg_list]@arg_lists) inner_body in LambdaSimple'(arg_list,annotated_body)
   | LambdaOpt(arg_list, opt_arg, inner_body) -> let annotated_body = annotate_lambda_simple ([arg_list @ [opt_arg]]@arg_lists) inner_body 
   in  LambdaOpt'(arg_list, opt_arg, annotated_body)
-  
-  
   ;;
 
+let rec annotate_tail_rec in_tp e = match e with
+  | If'(test, dit, dif) -> If'(annotate_tail_rec false test, annotate_tail_rec false dit, annotate_tail_rec false dif)
+  | Seq'(expr_list) -> Seq'(List.map (annotate_tail_rec false) expr_list)
+  | Set'(expr_var, expr_val) -> Set'(annotate_tail_rec false expr_var,annotate_tail_rec false expr_val)
+  | Def'(expr_var, expr_val) -> Def'(annotate_tail_rec false expr_var,annotate_tail_rec false expr_val)
+  | Or'(expr_list) -> Or'(List.map (annotate_tail_rec false) expr_list)
+  | Applic'(expr, expr_list) -> if in_tp then ApplicTP'(annotate_tail_rec false expr,List.map (annotate_tail_rec false) expr_list) else Applic'(annotate_tail_rec false expr,List.map (annotate_tail_rec false) expr_list)
+  | LambdaSimple'(arg_list, body) -> LambdaSimple'(arg_list, annotate_tail_rec true body)
+  | LambdaOpt'(arg_list, opt_arg, body) -> LambdaOpt'(arg_list, opt_arg, annotate_tail_rec true body)
+  | other -> other
 
 let annotate_lexical_addresses e = annotate_lexical_rec e;;
 
-let annotate_tail_calls e = raise X_not_yet_implemented;;
+let annotate_tail_calls e = annotate_tail_rec false e;;
 
 let box_set e = raise X_not_yet_implemented;;
 
