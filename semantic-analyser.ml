@@ -64,7 +64,7 @@ module Semantics
 (* : SEMANTICS  *)
 = struct
 
-let rec annotate_vars exp annotate_fun = match exp with
+(* let rec annotate_vars exp annotate_fun = match exp with
   | Var(string) -> annotate_fun string
   | If(test, dit, dif) -> If(annotate_vars test annotate_fun, annotate_vars dit annotate_fun, annotate_vars dif annotate_fun)
   | Seq(expr_list) -> Seq(List.map annotate_vars expr_list )
@@ -73,24 +73,60 @@ let rec annotate_vars exp annotate_fun = match exp with
   | Or(expr_list) -> Or(List.map annotate_vars expr_list)
   | Applic(expr, expr_list) -> Applic(annotate_vars expr,List.map annotate_vars expr_list)
   | LambdaSimple(string_list, expr) -> LambdaSimple(string_list, expr)
-  | LambdaOpt(string_list, string, expr) -> LambdaOpt(string_list, string, expr);;
+  | LambdaOpt(string_list, string, expr) -> LambdaOpt(string_list, string, expr);; *)
 
-let find_parameters args_list body = 
+(* let find_parameters args_list body = 
   let create_param_or_free level args_list string_var = 
         match args_list with
         | [] -> VarFree(string_var)
         | car :: cdr -> if string_var = car then VarParam(string_var, level) else create_param_or_free (level + 1) cdr string_var 
         in 
     let annotate_fun = create_param_or_free 0 args_list in
-    annotate_vars body annotate_fun;;
+    annotate_vars body annotate_fun;; *)
       
+let rec annotate_bound_major string_var arg_lists major_level = 
+  let rec annotate_bound_minor string_var arg_list minor_level = match arg_list with
+  | car :: cdr -> if String.equal car string_var then Some(minor_level) else annotate_bound_minor string_var cdr (minor_level + 1)
+  | _ -> None in
 
-let annotate_lexical_addresses e = match e with
-| LambdaSimple(arg_list,body) -> (
-    (*find all parameters in body*)
-    let after_params = find_parameters arg_list body in after_params
-    (*if lambda is encountered in body -> call a recursive function (with major level as arg) that finds all bound *)
-)
+match arg_lists with
+| [arg_list :: cdr] -> let minor = annotate_bound_minor string_var arg_list 0 in (match minor with 
+   | Some(minor_level) -> if (major_level < 0) then Var'(VarParam(string_var, minor_level)) else Var'(VarBound(string_var, major_level, minor_level))
+   | None -> annotate_bound_major string_var [cdr] (major_level + 1))
+| _ -> Var'(VarFree(string_var))
+ ;;
+
+let rec annotate_lexical_rec e = match e with
+  | Const(constant) -> Const'(constant)
+  | Var(string) -> Var'(VarFree(string))
+  | If(test, dit, dif) -> If'(annotate_lexical_rec test, annotate_lexical_rec dit, annotate_lexical_rec dif)
+  | Seq(expr_list) -> Seq'(List.map annotate_lexical_rec expr_list)
+  | Set(expr_var, expr_val) -> Set'(annotate_lexical_rec expr_var,annotate_lexical_rec expr_val)
+  | Def(expr_var, expr_val) -> Def'(annotate_lexical_rec expr_var,annotate_lexical_rec expr_val)
+  | Or(expr_list) -> Or'(List.map annotate_lexical_rec expr_list)
+  | Applic(expr, expr_list) -> Applic'(annotate_lexical_rec expr,List.map annotate_lexical_rec expr_list)
+  | LambdaSimple(arg_list, body) -> let annotated_body = (annotate_lambda_simple [arg_list] body) in LambdaSimple'(arg_list,annotated_body)
+  | LambdaOpt(arg_list, opt_arg, body) -> let annotated_body = annotate_lambda_simple [arg_list@[opt_arg]] body in 
+  LambdaOpt'(arg_list, opt_arg, annotated_body)
+  
+  and annotate_lambda_simple arg_lists body = match body with
+  | Const(constant) -> Const'(constant)
+  | Var(str) -> annotate_bound_major str [arg_lists] (-1)
+  | If(test, dit, dif) -> If'(annotate_lambda_simple arg_lists test, annotate_lambda_simple arg_lists dit, annotate_lambda_simple arg_lists dif)
+  | Seq(expr_list) -> Seq'(List.map (annotate_lambda_simple arg_lists) expr_list)
+  | Set(expr_var, expr_val) -> Set'(annotate_lambda_simple arg_lists expr_var,annotate_lambda_simple arg_lists expr_val)
+  | Def(expr_var, expr_val) -> Def'(annotate_lambda_simple arg_lists expr_var,annotate_lambda_simple arg_lists expr_val)
+  | Or(expr_list) -> Or'(List.map (annotate_lambda_simple arg_lists) expr_list)
+  | Applic(expr, expr_list) -> Applic'(annotate_lambda_simple arg_lists expr,List.map (annotate_lambda_simple arg_lists) expr_list)
+  | LambdaSimple(arg_list, inner_body) -> let annotated_body = annotate_lambda_simple ([arg_list]@arg_lists) inner_body in LambdaSimple'(arg_list,annotated_body)
+  | LambdaOpt(arg_list, opt_arg, inner_body) -> let annotated_body = annotate_lambda_simple ([arg_list @ [opt_arg]]@arg_lists) inner_body 
+  in  LambdaOpt'(arg_list, opt_arg, annotated_body)
+  
+  
+  ;;
+
+
+let annotate_lexical_addresses e = annotate_lexical_rec e;;
 
 let annotate_tail_calls e = raise X_not_yet_implemented;;
 
