@@ -63,26 +63,6 @@ end;; *)
 module Semantics 
 (* : SEMANTICS  *)
 = struct
-
-(* let rec annotate_vars exp annotate_fun = match exp with
-  | Var(string) -> annotate_fun string
-  | If(test, dit, dif) -> If(annotate_vars test annotate_fun, annotate_vars dit annotate_fun, annotate_vars dif annotate_fun)
-  | Seq(expr_list) -> Seq(List.map annotate_vars expr_list )
-  | Set(expr_var, expr_val) -> Set(annotate_vars expr_var,annotate_vars expr_val)
-  | Def(expr_var, expr_val) -> Def(annotate_vars expr_var,annotate_vars expr_val)
-  | Or(expr_list) -> Or(List.map annotate_vars expr_list)
-  | Applic(expr, expr_list) -> Applic(annotate_vars expr,List.map annotate_vars expr_list)
-  | LambdaSimple(string_list, expr) -> LambdaSimple(string_list, expr)
-  | LambdaOpt(string_list, string, expr) -> LambdaOpt(string_list, string, expr);; *)
-
-(* let find_parameters args_list body = 
-  let create_param_or_free level args_list string_var = 
-        match args_list with
-        | [] -> VarFree(string_var)
-        | car :: cdr -> if string_var = car then VarParam(string_var, level) else create_param_or_free (level + 1) cdr string_var 
-        in 
-    let annotate_fun = create_param_or_free 0 args_list in
-    annotate_vars body annotate_fun;; *)
       
 let rec annotate_bound_major string_var arg_lists major_level = 
   let rec annotate_bound_minor string_var arg_list minor_level = match arg_list with
@@ -142,11 +122,40 @@ and annotate_or in_tp expr_list = (match (List.rev expr_list) with
     | car :: cdr -> Or'((List.map (annotate_tail_rec false) (List.rev cdr)) @ [(annotate_tail_rec in_tp car)])
     | _ -> Or'((List.map (annotate_tail_rec false) expr_list)))
 
+
+let rec box_set_arg arg body = Const'(Void)
+(* match body with
+| Var'(VarParam(str)) -> if String.equal str arg then [true; false; false] else [false; false; false]
+| Var'(VarBound(str, major, minor)) -> if String.equal str arg then [true; false; false] else [false; false; false]
+| Set'(Var'(VarParam(str1)), Var'(VarParam(str2))) -> if String.equal str1 arg
+then if String.equal str2 arg then [true; true; false] else [false; true; false]
+else if String.equal str2 arg then [true; false; false] else [false; false; false]
+| Set'(Var'(VarParam(str)), not_var) -> if String.equal str arg then [false; true; false] else [false; false; false]
+| LambdaSimple'(arg_list, body) -> match box_set_arg arg body with
+  | r::w::f -> [r; w; true] *)
+;;
+
+let rec box_set_lambda arg_list body = match arg_list with
+  | car :: cdr -> let new_body = box_set_arg car body  in box_set_lambda cdr new_body
+  | [] -> body ;;
+
+let rec box_set_rec e = match e with
+  | If'(test, dit, dif) -> If'(box_set_rec test, box_set_rec dit, box_set_rec dif)
+  | Seq'(expr_list) -> Seq'(List.map box_set_rec expr_list)
+  | Set'(expr_var, expr_val) -> Set'(box_set_rec expr_var,box_set_rec expr_val)
+  | Def'(expr_var, expr_val) -> Def'(box_set_rec expr_var,box_set_rec expr_val)
+  | Or'(expr_list) -> Or'(List.map box_set_rec expr_list)
+  | Applic'(expr, expr_list) -> Applic'(box_set_rec expr, List.map box_set_rec expr_list) 
+  | ApplicTP'(expr, expr_list) -> ApplicTP'(box_set_rec expr, List.map box_set_rec expr_list) 
+  | LambdaSimple'(arg_list, body) -> box_set_lambda arg_list body
+  | LambdaOpt'(arg_list, opt_arg, body) -> box_set_lambda [arg_list@[opt_arg]] body
+  | other -> other;;
+
 let annotate_lexical_addresses e = annotate_lexical_rec e;;
 
 let annotate_tail_calls e = annotate_tail_rec false e;;
 
-let box_set e = raise X_not_yet_implemented;;
+let box_set e = box_set_rec e;;
 
 (* let run_semantics expr =
   box_set

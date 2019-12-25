@@ -3,18 +3,17 @@ open Tag_Parser;;
 #use "semantic-analyser.ml";;
 open Semantics;;
 
-(* tag_parse_expression(
-Pair(Symbol "lambda", Pair(Nil, Pair(Pair(Symbol "set!", Pair(Symbol "x", Pair(Pair(Symbol "f", Pair(Pair(Symbol "lambda", Pair(Pair(Symbol "y", Nil), Pair(Pair(Symbol "g", Pair(Symbol "x", Pair(Symbol "y", Nil))), Nil))), Nil)), Nil))), Nil))) 
-);; *)
-
-annotate_tail_calls 
+tag_parse_expression(
+Pair(Symbol "lambda", Pair(Pair(Symbol "x", Nil), Pair(Pair(Symbol "lambda", Pair(Nil, Pair(Pair(Symbol "lambda", Pair(Nil, Pair(Symbol "x", Nil))), Pair(Pair(Symbol "lambda", Pair(Pair(Symbol "y", Nil), Pair(Pair(Symbol "set!", Pair(Symbol "x", Pair(Symbol "y", Nil))), Nil))), Nil)))), Nil)))
+);;
+(* annotate_tail_calls 
 (
 annotate_lexical_addresses (
-LambdaSimple ([],
- Set (Var "x",
-  Applic (Var "f",
-   [LambdaSimple (["y"], Applic (Var "g", [Var "x"; Var "y"]))])))
-));;
+Def (Var "foo1",
+ LambdaSimple (["x"],
+  Applic (Var "list",
+   [LambdaSimple ([], Var "x"); LambdaSimple (["y"], Set (Var "x", Var "y"))])))
+));; *)
 
 (*
 (define sexpr->ocaml-string
