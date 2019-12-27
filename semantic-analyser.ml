@@ -140,7 +140,6 @@ let box_set_arg minor arg body =
   let father_id = ref (-1) in
 
   let inc_id = 
-    fun () ->
       father_id := (!father_id) + 1 in
 
   let rec find_rw_fathers level arg body = match body with
@@ -152,12 +151,14 @@ let box_set_arg minor arg body =
       then if String.equal str arg then [[!father_id];[]] else [[];[]]
       else [[];[]]
 
-    | Set'(Var'(var), expr) -> match var, expr with
-      | VarParam(str1, minor1), VarParam(str2, minor2) -> if level = (-1)
+    | Set'(var, expr) -> 
+      (match var, expr with
+      | Var'(VarParam(str1, minor1)), Var'(VarParam(str2, minor2)) -> if level = (-1)
         then if String.equal str1 arg 
             then if String.equal str2 arg then [[!father_id];[!father_id]] else [[];[!father_id]]
             else if String.equal str2 arg then [[!father_id];[]] else [[];[]]
-      | VarBound(str1, major1, minor1), VarBound(str2, major2, minor2) -> 
+        else [[];[]]
+      | Var'(VarBound(str1, major1, minor1)), Var'(VarBound(str2, major2, minor2)) -> 
         if level = major1
               (*write matches level*)
               then if String.equal str1 arg 
@@ -179,7 +180,7 @@ let box_set_arg minor arg body =
                         then if String.equal str2 arg then [[!father_id];[]] else [[];[]]
                         (*read doesn't matches level*)
                         else [[];[]]
-      | VarBound(str1, major, minor1), VarParam(str2, minor2) ->  if level = major
+      | Var'(VarBound(str1, major, minor1)), Var'(VarParam(str2, minor2)) ->  if level = major
             (*write matches level*)
             then if String.equal str1 arg 
                   (*write matches name*)
@@ -188,7 +189,7 @@ let box_set_arg minor arg body =
                   else [[];[]]
             (*write doesn't matches level*)
             else [[];[]]
-      | VarParam(str1, minor1), VarBound(str2, major, minor2) -> if level = major
+      | Var'(VarParam(str1, minor1)), Var'(VarBound(str2, major, minor2)) -> if level = major
             (*read matches level*)
             then if String.equal str2 arg 
                   (*read matches name*)
@@ -197,79 +198,181 @@ let box_set_arg minor arg body =
                   else [[];[]]
             (*read doesn't matches level*)
             else [[];[]]
-      | VarParam(str, minor), not_var -> if level = -1
+      | Var'(VarParam(str, minor)), not_var -> if level = -1
         (*write matches level*)
         then if String.equal str arg 
               (*write matches name*)
-              then let [read_list;write_list] = find_rw_fathers level arg not_var in [read_list;[!father_id@write_list]]
+              then let result = find_rw_fathers level arg not_var in match result with
+              | read_list::[write_list] -> [read_list;[!father_id]@write_list]
+              | other -> other
               (*write doesn't matches name*)
               else find_rw_fathers level arg not_var
         (*write doesn't matches level*)
         else find_rw_fathers level arg not_var
-      | VarBound(str, major,minor), not_var -> if level = major
+      | Var'(VarBound(str, major,minor)), not_var -> if level = major
         (*write matches level*)
         then if String.equal str arg 
               (*write matches name*)
-              then let [read_list;write_list] = find_rw_fathers level arg not_var in [read_list;[!father_id@write_list]]
+              then let result = find_rw_fathers level arg not_var in match result with
+              | read_list::[write_list] -> [read_list;[!father_id]@write_list]
+              | other -> other
               (*write doesn't matches name*)
               else find_rw_fathers level arg not_var
         (*write doesn't matches level*)
         else find_rw_fathers level arg not_var
+      | other -> [[];[]]
+      )
 
             
     | If'(test, dit, dif) -> 
-      let [read_test;write_test] = find_rw_fathers level arg test in
-      let [read_dit;write_dit] = find_rw_fathers level arg dit in
-      let [read_dif;write_dif] = find_rw_fathers level arg dif in
-      [read_test@read_dit@read_dif;write_test@write_dit@write_dif]
+      let fathers_test = find_rw_fathers level arg test in
+      let fathers_dit = find_rw_fathers level arg dit in
+      let fathers_dif = find_rw_fathers level arg dif in
+      (match fathers_test, fathers_dit, fathers_dif with
+      | [read_test;write_test],[read_dit;write_dit],[read_dif;write_dif] ->  [read_test@read_dit@read_dif;write_test@write_dit@write_dif]
+      | other -> [[];[]])
 
     | Seq'(expr_list) -> 
-      let expr_list_rec = List.map find_rw_fathers expr_list in
+      let expr_list_rec = List.map (find_rw_fathers level arg) expr_list in
       List.fold_right append_inner_lists expr_list_rec []
     | Or'(expr_list) -> 
-      let expr_list_rec = List.map find_rw_fathers expr_list in
+      let expr_list_rec = List.map (find_rw_fathers level arg) expr_list in
       List.fold_right append_inner_lists expr_list_rec []
     | Applic'(expr, expr_list) -> 
       let expr_rec = find_rw_fathers level arg expr in
-      let expr_list_rec = List.map find_rw_fathers expr_list in
-      let expr_list_appended = List.fold_right append_inner_lists expr_list_rec []
+      let expr_list_rec = List.map (find_rw_fathers level arg) expr_list in
+      let expr_list_appended = List.fold_right append_inner_lists expr_list_rec [] in
       append_inner_lists expr_rec expr_list_appended
     | ApplicTP'(expr, expr_list) -> 
       let expr_rec = find_rw_fathers level arg expr in
-      let expr_list_rec = List.map find_rw_fathers expr_list in
-      let expr_list_appended = List.fold_right append_inner_lists expr_list_rec []
+      let expr_list_rec = List.map (find_rw_fathers level arg) expr_list in
+      let expr_list_appended = List.fold_right append_inner_lists expr_list_rec [] in
       append_inner_lists expr_rec expr_list_appended
-    | LambdaSimple'(arg_list, inner_body) -> if level = (-1) inc_id; find_rw_fathers (level + 1) arg inner_body
-    | LambdaOpt'(arg_list, opt_arg, inner_body) -> if level = (-1) inc_id; find_rw_fathers (level + 1) arg inner_body
-    | Def'(expr_var, expr_val) -> -> raise X_syntax_error
-    | other -> []  in
+    | LambdaSimple'(arg_list, inner_body) -> if level = (-1) then inc_id; find_rw_fathers (level + 1) arg inner_body
+    | LambdaOpt'(arg_list, opt_arg, inner_body) -> if level = (-1) then inc_id; find_rw_fathers (level + 1) arg inner_body
+    | Def'(expr_var, expr_val) -> raise X_syntax_error
+    | other -> [[];[]]  in
 
-  let [read_list;write_list] = find_rw_fathers (-1) arg body in
+  let fathers = find_rw_fathers (-1) arg body in
   let rec need_boxing read_list write_list = match read_list, write_list with
     | [] , other -> false
     | other , [] -> false
-    | arg1::rest1, arg2::rest2 -> if !(List.mem arg1 write_list) then true else (false || need_boxing rest1 rest2) in
+    | arg1::rest1, arg2::rest2 -> if (List.mem arg1 write_list) then (false || need_boxing rest1 rest2) else true in
 
   let box_body body =
-    let set_box = Set'(VarParam(arg, minor), Box'(VarParam(arg, minor))) in
+    let set_box = Set'(Var'(VarParam(arg, minor)), Box'((VarParam(arg, minor)))) in
    match body with
   | Seq'(expr_list) -> 
     Seq'([set_box]@expr_list)
-  | other -> Seq'([set_box]@[expr_list]) in
+  | other -> Seq'([set_box]@[other]) in
+  
 
-  if need_boxing read_list write_list then box_body body else body;;
+  let rec box_get_set_body level arg body = match body with
+    | Var'(VarParam(str, minor)) -> if level = (-1) 
+      then if String.equal str arg then BoxGet'(VarParam(str, minor)) else body
+      else body
+
+    | Var'(VarBound(str, major, minor)) -> if level = major
+      then if String.equal str arg then BoxGet'(VarBound(str, major, minor)) else body
+      else body
+
+    | Set'(var, expr) -> 
+      (match var, expr with
+      | Var'(VarParam(str1, minor1)), Var'(VarParam(str2, minor2)) -> if level = (-1)
+        then if String.equal str1 arg 
+            then if String.equal str2 arg then BoxSet'(VarParam(str1, minor1), BoxGet'(VarParam(str2, minor2))) else BoxSet'(VarParam(str1, minor1), expr)
+            else if String.equal str2 arg then Set'(var, BoxGet'(VarParam(str2, minor2))) else body
+        else body
+      | Var'(VarBound(str1, major1, minor1)), Var'(VarBound(str2, major2, minor2)) -> 
+        if level = major1
+              (*write matches level*)
+              then if String.equal str1 arg 
+                    (*write matches name*)
+                    then if level = major2 
+                        (*read matches level*)
+                        then if String.equal str2 arg then BoxSet'(VarBound(str1, major1, minor1), BoxGet'(VarBound(str2, major2, minor2))) else BoxSet'(VarBound(str1, major1, minor1), expr)
+                        (*read doesn't matches level*)
+                        else BoxSet'(VarBound(str1, major1, minor1), expr)
+                    (*write doesn't match name*)
+                    else if level = major2 
+                        (*read matches level*)
+                        then if String.equal str2 arg then Set'(var, BoxGet'(VarBound(str2, major2, minor2))) else body
+                        (*read doesn't matches level*)
+                        else body
+              (*write doesn't matches level*)
+              else if level = major2 
+                        (*read matches level*)
+                        then if String.equal str2 arg then Set'(var, BoxGet'(VarBound(str2, major2, minor2))) else body
+                        (*read doesn't matches level*)
+                        else body
+      | Var'(VarBound(str1, major, minor1)), Var'(VarParam(str2, minor2)) ->  if level = major
+            (*write matches level*)
+            then if String.equal str1 arg 
+                  (*write matches name*)
+                  then BoxSet'(VarBound(str1, major, minor1), expr)
+                  (*write doesn't match name*)
+                  else body
+            (*write doesn't matches level*)
+            else body
+      | Var'(VarParam(str1, minor1)), Var'(VarBound(str2, major, minor2)) -> if level = major
+            (*read matches level*)
+            then if String.equal str2 arg 
+                  (*read matches name*)
+                  then Set'(var, BoxGet'(VarBound(str2, major, minor2)))
+                  (*read doesn't match name*)
+                  else body
+            (*read doesn't matches level*)
+            else body
+      | Var'(VarParam(str, minor)), not_var -> 
+        let result_body = box_get_set_body level arg not_var in
+        if level = -1
+        (*write matches level*)
+        then if String.equal str arg 
+              (*write matches name*)
+              then BoxSet'(VarParam(str, minor), result_body)
+              (*write doesn't matches name*)
+              else Set'(var, result_body)
+        (*write doesn't matches level*)
+        else Set'(var, result_body)
+      | Var'(VarBound(str, major,minor)), not_var -> 
+        let result_body = box_get_set_body level arg not_var in
+        if level = major
+        (*write matches level*)
+        then if String.equal str arg 
+              (*write matches name*)
+              then BoxSet'(VarBound(str, major,minor), result_body)
+              (*write doesn't matches name*)
+              else Set'(var, result_body)
+        (*write doesn't matches level*)
+        else Set'(var, result_body)
+      | other -> body
+      )
+
+            
+    | If'(test, dit, dif) -> If'(box_get_set_body level arg test, box_get_set_body level arg dit, box_get_set_body level arg dif)
+
+    | Seq'(expr_list) -> Seq'(List.map (box_get_set_body level arg) expr_list)
+    | Or'(expr_list) -> Or'(List.map (box_get_set_body level arg) expr_list )
+    | Applic'(expr, expr_list) -> Applic'((box_get_set_body level arg) expr,List.map (box_get_set_body level arg) expr_list)
+    | ApplicTP'(expr, expr_list) -> ApplicTP'((box_get_set_body level arg) expr,List.map (box_get_set_body level arg) expr_list)
+    | LambdaSimple'(arg_list, inner_body) -> LambdaSimple'(arg_list, (box_get_set_body level arg) inner_body)
+    | LambdaOpt'(arg_list, opt_arg, inner_body) -> LambdaOpt'(arg_list, opt_arg, (box_get_set_body level arg) inner_body)
+    | Def'(expr_var, expr_val) -> raise X_syntax_error
+    | other -> body  in
+
+
+  match fathers with
+  | [read_list;write_list] -> if need_boxing read_list write_list then box_body (box_get_set_body (-1) arg body) else body
+  | other -> body
+  
 
 let box_set_lambda arg_list body =
-  
-  let minor = ref (0) in
 
-  let next_minor = 
-    fun () ->
-      minor := (!minor) + 1 in
+  let rec handle_arg minor arg_list body = match arg_list with
+    | car :: cdr -> let new_body = box_set_arg minor car body in handle_arg (minor+1) cdr new_body
+    | [] -> body in
 
-  let rec handle_arg arg_list = match arg_list with
-    | car :: cdr -> let new_body = box_set_arg minor car body  in box_set_lambda cdr new_body
-    | [] -> body ;;
+  handle_arg 0 arg_list body;;
 
 let rec box_set_rec e = match e with
   | If'(test, dit, dif) -> If'(box_set_rec test, box_set_rec dit, box_set_rec dif)
@@ -279,14 +382,14 @@ let rec box_set_rec e = match e with
   | Or'(expr_list) -> Or'(List.map box_set_rec expr_list)
   | Applic'(expr, expr_list) -> Applic'(box_set_rec expr, List.map box_set_rec expr_list) 
   | ApplicTP'(expr, expr_list) -> ApplicTP'(box_set_rec expr, List.map box_set_rec expr_list) 
-  | LambdaSimple'(arg_list, body) -> box_set_lambda arg_list body
-  | LambdaOpt'(arg_list, opt_arg, body) -> box_set_lambda [arg_list@[opt_arg]] body
+  | LambdaSimple'(arg_list, body) -> LambdaSimple'(arg_list,box_set_lambda arg_list body)
+  | LambdaOpt'(arg_list, opt_arg, body) -> LambdaOpt'(arg_list, opt_arg, box_set_lambda (arg_list@[opt_arg]) body)
   | other -> other;; 
 
 let annotate_lexical_addresses e = annotate_lexical_rec e;;
 
 let annotate_tail_calls e = annotate_tail_rec false e;;
-    match l1 with
-       (annotate_lexical_addresses expr));; *)
   
+let box_set e = box_set_rec e;;
+
 end;; (* struct Semantics *)
