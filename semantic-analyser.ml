@@ -123,21 +123,153 @@ and annotate_or in_tp expr_list = (match (List.rev expr_list) with
     | _ -> Or'((List.map (annotate_tail_rec false) expr_list)))
 
 
-let rec box_set_arg arg body = Const'(Void)
-(* match body with
-| Var'(VarParam(str)) -> if String.equal str arg then [true; false; false] else [false; false; false]
-| Var'(VarBound(str, major, minor)) -> if String.equal str arg then [true; false; false] else [false; false; false]
-| Set'(Var'(VarParam(str1)), Var'(VarParam(str2))) -> if String.equal str1 arg
-then if String.equal str2 arg then [true; true; false] else [false; true; false]
-else if String.equal str2 arg then [true; false; false] else [false; false; false]
-| Set'(Var'(VarParam(str)), not_var) -> if String.equal str arg then [false; true; false] else [false; false; false]
-| LambdaSimple'(arg_list, body) -> match box_set_arg arg body with
-  | r::w::f -> [r; w; true] *)
-;;
+let rec append_list l1 l2 =
+    match l1 with
+    | [] -> l2
+    | h::t -> if List.mem h l2 then append_list t l2
+              else append_list t (h::l2)
 
-let rec box_set_lambda arg_list body = match arg_list with
-  | car :: cdr -> let new_body = box_set_arg car body  in box_set_lambda cdr new_body
-  | [] -> body ;;
+let append_inner_lists l1 l2 = match l1, l2 with
+| left1::[right1], left2::[right2] -> [append_list left1 left2;append_list right1 right2]
+|(l1, []) -> l1
+|([], l2) -> l2
+| other -> []
+
+let box_set_arg minor arg body = 
+(* Const'(Void) *)
+  let father_id = ref (-1) in
+
+  let inc_id = 
+    fun () ->
+      father_id := (!father_id) + 1 in
+
+  let rec find_rw_fathers level arg body = match body with
+    | Var'(VarParam(str, minor)) -> if level = (-1) 
+      then if String.equal str arg then [[-1];[]] else [[];[]]
+      else [[];[]]
+
+    | Var'(VarBound(str, major, minor)) -> if level = major
+      then if String.equal str arg then [[!father_id];[]] else [[];[]]
+      else [[];[]]
+
+    | Set'(Var'(var), expr) -> match var, expr with
+      | VarParam(str1, minor1), VarParam(str2, minor2) -> if level = (-1)
+        then if String.equal str1 arg 
+            then if String.equal str2 arg then [[!father_id];[!father_id]] else [[];[!father_id]]
+            else if String.equal str2 arg then [[!father_id];[]] else [[];[]]
+      | VarBound(str1, major1, minor1), VarBound(str2, major2, minor2) -> 
+        if level = major1
+              (*write matches level*)
+              then if String.equal str1 arg 
+                    (*write matches name*)
+                    then if level = major2 
+                        (*read matches level*)
+                        then if String.equal str2 arg then [[!father_id];[!father_id]] else [[];[!father_id]]
+                        (*read doesn't matches level*)
+                        else [[];[!father_id]]
+                    (*write doesn't name*)
+                    else if level = major2 
+                        (*read matches level*)
+                        then if String.equal str2 arg then [[!father_id];[]] else [[];[]]
+                        (*read doesn't matches level*)
+                        else [[];[]]
+              (*write doesn't matches level*)
+              else if level = major2 
+                        (*read matches level*)
+                        then if String.equal str2 arg then [[!father_id];[]] else [[];[]]
+                        (*read doesn't matches level*)
+                        else [[];[]]
+      | VarBound(str1, major, minor1), VarParam(str2, minor2) ->  if level = major
+            (*write matches level*)
+            then if String.equal str1 arg 
+                  (*write matches name*)
+                  then [[];[!father_id]]
+                  (*write doesn't match name*)
+                  else [[];[]]
+            (*write doesn't matches level*)
+            else [[];[]]
+      | VarParam(str1, minor1), VarBound(str2, major, minor2) -> if level = major
+            (*read matches level*)
+            then if String.equal str2 arg 
+                  (*read matches name*)
+                  then [[!father_id];[]]
+                  (*read doesn't match name*)
+                  else [[];[]]
+            (*read doesn't matches level*)
+            else [[];[]]
+      | VarParam(str, minor), not_var -> if level = -1
+        (*write matches level*)
+        then if String.equal str arg 
+              (*write matches name*)
+              then let [read_list;write_list] = find_rw_fathers level arg not_var in [read_list;[!father_id@write_list]]
+              (*write doesn't matches name*)
+              else find_rw_fathers level arg not_var
+        (*write doesn't matches level*)
+        else find_rw_fathers level arg not_var
+      | VarBound(str, major,minor), not_var -> if level = major
+        (*write matches level*)
+        then if String.equal str arg 
+              (*write matches name*)
+              then let [read_list;write_list] = find_rw_fathers level arg not_var in [read_list;[!father_id@write_list]]
+              (*write doesn't matches name*)
+              else find_rw_fathers level arg not_var
+        (*write doesn't matches level*)
+        else find_rw_fathers level arg not_var
+
+            
+    | If'(test, dit, dif) -> 
+      let [read_test;write_test] = find_rw_fathers level arg test in
+      let [read_dit;write_dit] = find_rw_fathers level arg dit in
+      let [read_dif;write_dif] = find_rw_fathers level arg dif in
+      [read_test@read_dit@read_dif;write_test@write_dit@write_dif]
+
+    | Seq'(expr_list) -> 
+      let expr_list_rec = List.map find_rw_fathers expr_list in
+      List.fold_right append_inner_lists expr_list_rec []
+    | Or'(expr_list) -> 
+      let expr_list_rec = List.map find_rw_fathers expr_list in
+      List.fold_right append_inner_lists expr_list_rec []
+    | Applic'(expr, expr_list) -> 
+      let expr_rec = find_rw_fathers level arg expr in
+      let expr_list_rec = List.map find_rw_fathers expr_list in
+      let expr_list_appended = List.fold_right append_inner_lists expr_list_rec []
+      append_inner_lists expr_rec expr_list_appended
+    | ApplicTP'(expr, expr_list) -> 
+      let expr_rec = find_rw_fathers level arg expr in
+      let expr_list_rec = List.map find_rw_fathers expr_list in
+      let expr_list_appended = List.fold_right append_inner_lists expr_list_rec []
+      append_inner_lists expr_rec expr_list_appended
+    | LambdaSimple'(arg_list, inner_body) -> if level = (-1) inc_id; find_rw_fathers (level + 1) arg inner_body
+    | LambdaOpt'(arg_list, opt_arg, inner_body) -> if level = (-1) inc_id; find_rw_fathers (level + 1) arg inner_body
+    | Def'(expr_var, expr_val) -> -> raise X_syntax_error
+    | other -> []  in
+
+  let [read_list;write_list] = find_rw_fathers (-1) arg body in
+  let rec need_boxing read_list write_list = match read_list, write_list with
+    | [] , other -> false
+    | other , [] -> false
+    | arg1::rest1, arg2::rest2 -> if !(List.mem arg1 write_list) then true else (false || need_boxing rest1 rest2) in
+
+  let box_body body =
+    let set_box = Set'(VarParam(arg, minor), Box'(VarParam(arg, minor))) in
+   match body with
+  | Seq'(expr_list) -> 
+    Seq'([set_box]@expr_list)
+  | other -> Seq'([set_box]@[expr_list]) in
+
+  if need_boxing read_list write_list then box_body body else body;;
+
+let box_set_lambda arg_list body =
+  
+  let minor = ref (0) in
+
+  let next_minor = 
+    fun () ->
+      minor := (!minor) + 1 in
+
+  let rec handle_arg arg_list = match arg_list with
+    | car :: cdr -> let new_body = box_set_arg minor car body  in box_set_lambda cdr new_body
+    | [] -> body ;;
 
 let rec box_set_rec e = match e with
   | If'(test, dit, dif) -> If'(box_set_rec test, box_set_rec dit, box_set_rec dif)
@@ -149,17 +281,12 @@ let rec box_set_rec e = match e with
   | ApplicTP'(expr, expr_list) -> ApplicTP'(box_set_rec expr, List.map box_set_rec expr_list) 
   | LambdaSimple'(arg_list, body) -> box_set_lambda arg_list body
   | LambdaOpt'(arg_list, opt_arg, body) -> box_set_lambda [arg_list@[opt_arg]] body
-  | other -> other;;
+  | other -> other;; 
 
 let annotate_lexical_addresses e = annotate_lexical_rec e;;
 
 let annotate_tail_calls e = annotate_tail_rec false e;;
-
-let box_set e = box_set_rec e;;
-
-(* let run_semantics expr =
-  box_set
-    (annotate_tail_calls
+    match l1 with
        (annotate_lexical_addresses expr));; *)
   
 end;; (* struct Semantics *)
