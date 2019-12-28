@@ -52,16 +52,16 @@ let rec expr'_eq e1 e2 =
                        
 exception X_syntax_error;;
 
-(* module type SEMANTICS =  *)
-(* sig
+module type SEMANTICS = 
+sig
   val run_semantics : expr -> expr'
   val annotate_lexical_addresses : expr -> expr'
   val annotate_tail_calls : expr' -> expr'
   val box_set : expr' -> expr'
-end;; *)
+end;;
 
 module Semantics 
-(* : SEMANTICS  *)
+: SEMANTICS 
 = struct
       
 let rec annotate_bound_major string_var arg_lists major_level = 
@@ -127,36 +127,45 @@ let rec append_list l1 l2 =
     match l1 with
     | [] -> l2
     | h::t -> if List.mem h l2 then append_list t l2
-              else append_list t (h::l2)
+              else append_list t (h::l2);;
 
 let append_inner_lists l1 l2 = match l1, l2 with
 | left1::[right1], left2::[right2] -> [append_list left1 left2;append_list right1 right2]
 |(l1, []) -> l1
 |([], l2) -> l2
-| other -> []
+| other -> [];;
 
-let box_set_arg minor arg body = 
-(* Const'(Void) *)
-  let father_id = ref (-1) in
+let rec print_list = function 
+[] -> ()
+| e::l -> print_int e ; print_string " " ; print_list l;;
 
-  let inc_id = 
-      father_id := (!father_id) + 1 in
+  type counter = { get : unit -> int;
+                     incr : unit -> unit };;
 
-  let rec find_rw_fathers level arg body = match body with
+let find_fathers minor arg body = 
+
+  let father_id =
+    let n = ref 0 in
+    { get = (fun () -> !n);
+      incr = (fun () -> n:= !n +1) } in
+
+  let rec find_rw_fathers level arg body = 
+    (* Printf.printf "father %d level %d arg %s\n" (father_id.get ()) level arg; *)
+    match body with
     | Var'(VarParam(str, minor)) -> if level = (-1) 
       then if String.equal str arg then [[-1];[]] else [[];[]]
       else [[];[]]
 
     | Var'(VarBound(str, major, minor)) -> if level = major
-      then if String.equal str arg then [[!father_id];[]] else [[];[]]
+      then if String.equal str arg then [[(father_id.get ())];[]] else [[];[]]
       else [[];[]]
 
     | Set'(var, expr) -> 
       (match var, expr with
       | Var'(VarParam(str1, minor1)), Var'(VarParam(str2, minor2)) -> if level = (-1)
         then if String.equal str1 arg 
-            then if String.equal str2 arg then [[!father_id];[!father_id]] else [[];[!father_id]]
-            else if String.equal str2 arg then [[!father_id];[]] else [[];[]]
+            then if String.equal str2 arg then [[-1];[-1]] else [[];[-1]]
+            else if String.equal str2 arg then [[-1];[]] else [[];[]]
         else [[];[]]
       | Var'(VarBound(str1, major1, minor1)), Var'(VarBound(str2, major2, minor2)) -> 
         if level = major1
@@ -165,26 +174,26 @@ let box_set_arg minor arg body =
                     (*write matches name*)
                     then if level = major2 
                         (*read matches level*)
-                        then if String.equal str2 arg then [[!father_id];[!father_id]] else [[];[!father_id]]
+                        then if String.equal str2 arg then [[(father_id.get ())];[(father_id.get ())]] else [[];[(father_id.get ())]]
                         (*read doesn't matches level*)
-                        else [[];[!father_id]]
+                        else [[];[(father_id.get ())]]
                     (*write doesn't name*)
                     else if level = major2 
                         (*read matches level*)
-                        then if String.equal str2 arg then [[!father_id];[]] else [[];[]]
+                        then if String.equal str2 arg then [[(father_id.get ())];[]] else [[];[]]
                         (*read doesn't matches level*)
                         else [[];[]]
               (*write doesn't matches level*)
               else if level = major2 
                         (*read matches level*)
-                        then if String.equal str2 arg then [[!father_id];[]] else [[];[]]
+                        then if String.equal str2 arg then [[(father_id.get ())];[]] else [[];[]]
                         (*read doesn't matches level*)
                         else [[];[]]
       | Var'(VarBound(str1, major, minor1)), Var'(VarParam(str2, minor2)) ->  if level = major
             (*write matches level*)
             then if String.equal str1 arg 
                   (*write matches name*)
-                  then [[];[!father_id]]
+                  then [[];[(father_id.get ())]]
                   (*write doesn't match name*)
                   else [[];[]]
             (*write doesn't matches level*)
@@ -193,7 +202,7 @@ let box_set_arg minor arg body =
             (*read matches level*)
             then if String.equal str2 arg 
                   (*read matches name*)
-                  then [[!father_id];[]]
+                  then [[(father_id.get ())];[]]
                   (*read doesn't match name*)
                   else [[];[]]
             (*read doesn't matches level*)
@@ -203,7 +212,7 @@ let box_set_arg minor arg body =
         then if String.equal str arg 
               (*write matches name*)
               then let result = find_rw_fathers level arg not_var in match result with
-              | read_list::[write_list] -> [read_list;[!father_id]@write_list]
+              | read_list::[write_list] -> [read_list;[-1]@write_list]
               | other -> other
               (*write doesn't matches name*)
               else find_rw_fathers level arg not_var
@@ -214,7 +223,7 @@ let box_set_arg minor arg body =
         then if String.equal str arg 
               (*write matches name*)
               then let result = find_rw_fathers level arg not_var in match result with
-              | read_list::[write_list] -> [read_list;[!father_id]@write_list]
+              | read_list::[write_list] -> [read_list;[(father_id.get ())]@write_list]
               | other -> other
               (*write doesn't matches name*)
               else find_rw_fathers level arg not_var
@@ -248,31 +257,22 @@ let box_set_arg minor arg body =
       let expr_list_rec = List.map (find_rw_fathers level arg) expr_list in
       let expr_list_appended = List.fold_right append_inner_lists expr_list_rec [] in
       append_inner_lists expr_rec expr_list_appended
-    | LambdaSimple'(arg_list, inner_body) -> if level = (-1) then inc_id; find_rw_fathers (level + 1) arg inner_body
-    | LambdaOpt'(arg_list, opt_arg, inner_body) -> if level = (-1) then inc_id; find_rw_fathers (level + 1) arg inner_body
+    | LambdaSimple'(arg_list, inner_body) -> if level = (-1) then father_id.incr (); find_rw_fathers (level + 1) arg inner_body
+    | LambdaOpt'(arg_list, opt_arg, inner_body) -> if level = (-1) then father_id.incr (); find_rw_fathers (level + 1) arg inner_body
     | Def'(expr_var, expr_val) -> raise X_syntax_error
     | other -> [[];[]]  in
 
-  let fathers = find_rw_fathers (-1) arg body in
-  let rec need_boxing read_list write_list = match read_list, write_list with
-    | [] , other -> false
-    | other , [] -> false
-    | arg1::rest1, arg2::rest2 -> if (List.mem arg1 write_list) then (false || need_boxing rest1 rest2) else true in
+  find_rw_fathers (-1) arg body;;
 
-  let box_body body =
-    let set_box = Set'(Var'(VarParam(arg, minor)), Box'((VarParam(arg, minor)))) in
-   match body with
-  | Seq'(expr_list) -> 
-    Seq'([set_box]@expr_list)
-  | other -> Seq'([set_box]@[other]) in
   
-
-  let rec box_get_set_body level arg body = match body with
+let rec box_get_set_body level arg body = 
+match body with
     | Var'(VarParam(str, minor)) -> if level = (-1) 
       then if String.equal str arg then BoxGet'(VarParam(str, minor)) else body
       else body
 
-    | Var'(VarBound(str, major, minor)) -> if level = major
+    | Var'(VarBound(str, major, minor)) -> 
+    if level = major
       then if String.equal str arg then BoxGet'(VarBound(str, major, minor)) else body
       else body
 
@@ -347,32 +347,73 @@ let box_set_arg minor arg body =
         else Set'(var, result_body)
       | other -> body
       )
-
+    | BoxSet'(var, expr) -> BoxSet'(var, box_get_set_body level arg expr)
+          
+          
             
     | If'(test, dit, dif) -> If'(box_get_set_body level arg test, box_get_set_body level arg dit, box_get_set_body level arg dif)
-
     | Seq'(expr_list) -> Seq'(List.map (box_get_set_body level arg) expr_list)
     | Or'(expr_list) -> Or'(List.map (box_get_set_body level arg) expr_list )
     | Applic'(expr, expr_list) -> Applic'((box_get_set_body level arg) expr,List.map (box_get_set_body level arg) expr_list)
     | ApplicTP'(expr, expr_list) -> ApplicTP'((box_get_set_body level arg) expr,List.map (box_get_set_body level arg) expr_list)
-    | LambdaSimple'(arg_list, inner_body) -> LambdaSimple'(arg_list, (box_get_set_body level arg) inner_body)
-    | LambdaOpt'(arg_list, opt_arg, inner_body) -> LambdaOpt'(arg_list, opt_arg, (box_get_set_body level arg) inner_body)
+    | LambdaSimple'(arg_list, inner_body) -> LambdaSimple'(arg_list, (box_get_set_body (level+1) arg) inner_body)
+    | LambdaOpt'(arg_list, opt_arg, inner_body) -> LambdaOpt'(arg_list, opt_arg, (box_get_set_body (level+1) arg) inner_body)
     | Def'(expr_var, expr_val) -> raise X_syntax_error
-    | other -> body  in
+    | other -> body;;
 
+let handle_arg minor arg body = 
+    let need_boxing read_list write_list = 
+    let rec need_boxing_rec ls1 ls2 = 
+    (match ls1, ls2 with
+      | [], [] -> false
+      | [] , other -> true
+      | other , [] -> true
+      | arg1::rest1, arg2::rest2 -> if (List.mem arg1 ls2) 
+                                    (*arg1 is in l2*)
+                                        (*arg1 is in l2 AND arg2 is in l1*)
+                                        then (false || need_boxing_rec rest1 (List.filter (fun a -> a!=arg1) ls2)) 
+                                        (*arg1 is in l2 AND arg2 is NOT in l1*)
+                                        else true ) in
+    match read_list, write_list with
+    | [] , other -> false
+    | other , [] -> false
+    | non_empty1, non_empty2 -> need_boxing_rec non_empty1 non_empty2 in
 
-  match fathers with
+  let fathers = find_fathers minor arg body in
+  (* match fathers with
   | [read_list;write_list] -> if need_boxing read_list write_list then box_body (box_get_set_body (-1) arg body) else body
-  | other -> body
-  
+  | other -> body *)
+    match fathers with
+  | [read_list;write_list] -> if need_boxing read_list write_list then true else false
+  | other -> false
 
 let box_set_lambda arg_list body =
 
-  let rec handle_arg minor arg_list body = match arg_list with
-    | car :: cdr -> let new_body = box_set_arg minor car body in handle_arg (minor+1) cdr new_body
-    | [] -> body in
+  let rec args_to_set_box_list minor arg_list body = match arg_list with
+    | car :: cdr -> 
+    let needs_boxing = handle_arg minor car body in if needs_boxing 
+      then
+          let set_box_car = Set'(Var'(VarParam(car, minor)), Box'((VarParam(car, minor)))) in
+          let set_box_cdr = args_to_set_box_list (minor+1) cdr body in ([set_box_car] @ set_box_cdr)
 
-  handle_arg 0 arg_list body;;
+      else args_to_set_box_list (minor+1) cdr body
+    | [] -> [] in
+  
+
+  let rec box_get_set_all_args minor arg_list rec_body = match arg_list with
+    | car :: cdr -> 
+    let needs_boxing = handle_arg minor car body in if needs_boxing 
+      then let new_body = box_get_set_body (-1) car rec_body in box_get_set_all_args (minor + 1) cdr new_body
+      else box_get_set_all_args (minor + 1) cdr rec_body
+    | [] -> rec_body in
+
+  let set_box_list = args_to_set_box_list 0 arg_list body in
+  let new_body = box_get_set_all_args 0 arg_list body in
+  match set_box_list with
+  | [] -> body
+  | list -> Seq'(set_box_list@[new_body])
+
+   ;;
 
 let rec box_set_rec e = match e with
   | If'(test, dit, dif) -> If'(box_set_rec test, box_set_rec dit, box_set_rec dif)
@@ -382,8 +423,8 @@ let rec box_set_rec e = match e with
   | Or'(expr_list) -> Or'(List.map box_set_rec expr_list)
   | Applic'(expr, expr_list) -> Applic'(box_set_rec expr, List.map box_set_rec expr_list) 
   | ApplicTP'(expr, expr_list) -> ApplicTP'(box_set_rec expr, List.map box_set_rec expr_list) 
-  | LambdaSimple'(arg_list, body) -> LambdaSimple'(arg_list,box_set_lambda arg_list body)
-  | LambdaOpt'(arg_list, opt_arg, body) -> LambdaOpt'(arg_list, opt_arg, box_set_lambda (arg_list@[opt_arg]) body)
+  | LambdaSimple'(arg_list, body) -> LambdaSimple'(arg_list,box_set_rec (box_set_lambda arg_list body))
+  | LambdaOpt'(arg_list, opt_arg, body) -> LambdaOpt'(arg_list, opt_arg, box_set_rec (box_set_lambda (arg_list@[opt_arg]) body))
   | other -> other;; 
 
 let annotate_lexical_addresses e = annotate_lexical_rec e;;
@@ -391,5 +432,10 @@ let annotate_lexical_addresses e = annotate_lexical_rec e;;
 let annotate_tail_calls e = annotate_tail_rec false e;;
   
 let box_set e = box_set_rec e;;
+
+let run_semantics expr =
+  box_set
+    (annotate_tail_calls
+       (annotate_lexical_addresses expr));;
 
 end;; (* struct Semantics *)

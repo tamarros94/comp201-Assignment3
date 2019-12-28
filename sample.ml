@@ -15,7 +15,7 @@ annotate_lexical_addresses (
    [Var "x";
     LambdaSimple (["x"],
      Seq
-      [Set (Var "x", Const (Sexpr (Number (Int 1))));
+      [Set (Var "y", Var "x");
        LambdaSimple ([], Var "x")]);
     LambdaSimple ([], Set (Var "x", Var "x"))])
 )
