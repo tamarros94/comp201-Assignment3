@@ -218,21 +218,22 @@ let find_fathers minor arg body =
               else find_rw_fathers level arg not_var
         (*write doesn't matches level*)
         else find_rw_fathers level arg not_var
-      | Var'(VarBound(str, major,minor)), not_var -> if level = major
+      | Var'(VarBound(str, major,minor)), not_var -> 
+      if level = major
         (*write matches level*)
         then if String.equal str arg 
               (*write matches name*)
-              then let result = find_rw_fathers level arg not_var in match result with
+              then let result = find_rw_fathers level arg not_var in  match result with
               | read_list::[write_list] -> [read_list;[(father_id.get ())]@write_list]
               | other -> other
               (*write doesn't matches name*)
               else find_rw_fathers level arg not_var
         (*write doesn't matches level*)
         else find_rw_fathers level arg not_var
+      | Var'(VarFree(str)), expr -> find_rw_fathers level arg expr
       | other -> [[];[]]
       )
 
-            
     | If'(test, dit, dif) -> 
       let fathers_test = find_rw_fathers level arg test in
       let fathers_dit = find_rw_fathers level arg dit in
@@ -345,6 +346,8 @@ match body with
               else Set'(var, result_body)
         (*write doesn't matches level*)
         else Set'(var, result_body)
+     
+      | Var'(VarFree(str)), expr -> Set'(Var'(VarFree(str)), box_get_set_body level arg expr)
       | other -> body
       )
     | BoxSet'(var, expr) -> BoxSet'(var, box_get_set_body level arg expr)
@@ -380,11 +383,9 @@ let handle_arg minor arg body =
     | non_empty1, non_empty2 -> need_boxing_rec non_empty1 non_empty2 in
 
   let fathers = find_fathers minor arg body in
-  (* match fathers with
-  | [read_list;write_list] -> if need_boxing read_list write_list then box_body (box_get_set_body (-1) arg body) else body
-  | other -> body *)
+
     match fathers with
-  | [read_list;write_list] -> if need_boxing read_list write_list then true else false
+  | [read_list;write_list] ->  if need_boxing read_list write_list then true else false
   | other -> false
 
 let box_set_lambda arg_list body =
